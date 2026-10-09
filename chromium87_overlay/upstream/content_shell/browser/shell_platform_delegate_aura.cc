@@ -677,6 +677,21 @@ base::FilePath AppDirFor(const std::string& app_name) {
 // installed app is not a second browser; it is the same browser pointed at
 // one URL. Tracker runs an executable script on double-click and Deskbar
 // lists it, so a script is a first-class application here.
+// A value as one single-quoted shell word. The app name comes from the
+// site's web app manifest and the start URL is the site's own, and inside
+// double quotes "$(...)" or a stray '"' in either would run as a command
+// whenever the installed app is opened.
+std::string ShellQuote(const std::string& value) {
+  std::string out = "'";
+  for (char c : value) {
+    if (c == '\'')
+      out += "'\\''";
+    else
+      out += c;
+  }
+  return out + "'";
+}
+
 bool WriteLauncher(const base::FilePath& dir,
                    const std::string& app_name,
                    const GURL& start_url,
@@ -694,7 +709,7 @@ bool WriteLauncher(const base::FilePath& dir,
   script += "# Installed by R Chromium from " + start_url.spec() + "\n";
   script += "# Delete this directory to uninstall.\n";
   script += "\n";
-  script += "SHELL_BIN=\"" + shell_path.value() + "\"\n";
+  script += "SHELL_BIN=" + ShellQuote(shell_path.value()) + "\n";
   script += "[ -x \"$SHELL_BIN\" ] || SHELL_BIN=/boot/system/apps/RChromium/content_shell\n";
   script += "APPDIR=$(dirname \"$SHELL_BIN\")\n";
   script += "\n";
@@ -713,7 +728,7 @@ bool WriteLauncher(const base::FilePath& dir,
   script += "export RCH_NO_TOOLBAR\n";
   script += "\n";
   script += "# The window keeps the app's name rather than following the page.\n";
-  script += "RCH_APP_NAME=\"" + app_name + "\"\n";
+  script += "RCH_APP_NAME=" + ShellQuote(app_name) + "\n";
   script += "export RCH_APP_NAME\n";
   script += "\n";
   script += "exec \"$SHELL_BIN\" \\\n";
@@ -722,8 +737,8 @@ bool WriteLauncher(const base::FilePath& dir,
   script += "\t--disable-gpu \\\n";
   script += "\t--in-process-gpu \\\n";
   script += "\t--disable-gpu-compositing \\\n";
-  script += "\t--user-data-dir=\"" + dir.value() + "/profile\" \\\n";
-  script += "\t\"" + start_url.spec() + "\" \"$@\"\n";
+  script += "\t--user-data-dir=" + ShellQuote(dir.value() + "/profile") + " \\\n";
+  script += "\t" + ShellQuote(start_url.spec()) + " \"$@\"\n";
 
   const base::FilePath launcher = dir.Append(app_name);
   if (!base::WriteFile(launcher, script)) {
