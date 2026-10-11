@@ -1958,7 +1958,7 @@ the range registered at full size and calls `unlock_memory_etc()` for just
 
 Fixed by shrinking the range to what was actually wired before dropping the
 cache lock -- `haiku_kernel_patches/K0001-*.patch`, committed to the fork
-(`rainygirl/haiku-private`, branch `patch-master-v2`).
+(`rainygirl/renkuos-private`, branch `patch-master-v2`).
 
 **Build the kernel from the tree the machine is actually running.** The first
 attempt built from a clone sitting at hrev99002+0 and would have silently
