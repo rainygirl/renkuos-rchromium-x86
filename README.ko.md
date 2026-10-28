@@ -136,6 +136,24 @@ sh install.sh /path/to/dir/with/content_shell
 - **Qt가 없는지 확인:** `readelf -d /boot/home/RChromium/content_shell | grep NEEDED`
   결과에 `libbe.so` 등이 나열되고 `libQt5*`는 없어야 합니다.
 
+## 확장 기능
+
+Chrome 확장(Manifest V3)은 프로필의 `Extensions` 폴더
+(`~/config/settings/RChromium/Extensions`)에서 불러옵니다. 압축을 푼 확장 하나가 폴더
+하나입니다. `--load-extension=<dir>`로 한 번만 불러올 수도 있습니다. action이 있는 확장은
+툴바에 배지가 붙은 버튼이 생기고, 누르면 팝업이 작은 창으로 열립니다. `tabs`, `action`,
+`webNavigation`, `declarativeNetRequest`, `storage`, `scripting`, 콘텐츠 스크립트가
+동작하고, `chrome.cookies`는 이 빌드에서 아직 지원하지 않습니다. 아랍어와 컬러 이모지
+폰트가 패키지에 들어 있습니다.
+
+페이지는 각자의 프로세스에서 렌더링되고, 이 프로세스는 웹 콘텐츠를 다루기 전에 root 권한을
+버립니다. 그래서 공격당한 페이지가 사용자 파일을 쓸 수 없지만, 완전한 샌드박스는 아닙니다.
+
+## 기여자
+
+- [idumych](https://github.com/idumych) -- 확장 기능, 렌더러 샌드박스, 멀티프로세스,
+  아랍어·컬러 이모지 폰트(arm64·x86_64 포트의 Chromium 154용으로 작성, 이 포트에 이식)
+
 ## AI 고지
 
 이 프로그램은 Claude와 함께 작성되었습니다.

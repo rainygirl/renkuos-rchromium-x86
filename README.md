@@ -141,6 +141,26 @@ From a shell:
 - **Confirm it is Qt-free:** `readelf -d /boot/home/RChromium/content_shell | grep NEEDED`
   lists `libbe.so` and friends and no `libQt5*`.
 
+## Extensions
+
+Chrome extensions (Manifest V3) load from the `Extensions` folder of the
+profile, `~/config/settings/RChromium/Extensions`, one unpacked extension per
+folder; `--load-extension=<dir>` loads one for a single run. Each one with an
+action gets a toolbar button with its badge; a click opens its popup in a small
+window. `tabs`, `action`, `webNavigation`, `declarativeNetRequest`, `storage`,
+`scripting` and content scripts work; `chrome.cookies` does not yet on this
+build. Arabic and colour emoji fonts come with the package.
+
+Pages render in their own processes, and those drop root before they touch web
+content, so a compromised page cannot write your files; it is not a full
+sandbox.
+
+## Contributors
+
+- [idumych](https://github.com/idumych) -- extensions, the renderer sandbox,
+  multi-process, Arabic and colour emoji fonts (written for the arm64 and
+  x86_64 ports, Chromium 154, and brought to this one)
+
 ## AI disclosure
 
 This program was written with Claude.

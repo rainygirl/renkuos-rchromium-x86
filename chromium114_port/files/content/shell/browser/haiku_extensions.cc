@@ -14,6 +14,7 @@
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/strings/string_tokenizer.h"
+#include "base/threading/thread_restrictions.h"
 #include "base/memory/raw_ptr.h"
 #include "base/scoped_observation.h"
 #include "base/strings/utf_string_conversions.h"
@@ -31,9 +32,14 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/site_instance.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
+#include "extensions/browser/api/declarative_net_request/file_backed_ruleset_source.h"
+#include "extensions/browser/api/declarative_net_request/install_index_helper.h"
 #include "extensions/browser/api/declarative_net_request/web_contents_helper.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/common/file_util.h"
 #include "extensions/browser/api/messaging/messaging_api_message_filter.h"
 #include "extensions/browser/api/web_request/web_request_api.h"
 #include "extensions/browser/browser_context_keyed_service_factories.h"
@@ -43,6 +49,8 @@
 #include "extensions/browser/extension_icon_image.h"
 #include "extensions/browser/extension_message_filter.h"
 #include "extensions/browser/extension_registry_observer.h"
+#include "extensions/browser/extension_service_worker_message_filter.h"
+#include "extensions/browser/service_worker/service_worker_host.h"
 #include "extensions/browser/extension_navigation_throttle.h"
 #include "extensions/browser/extension_protocols.h"
 #include "extensions/browser/extension_registry.h"
@@ -67,7 +75,7 @@
 #include "extensions/shell/browser/shell_extensions_browser_client.h"
 #include "extensions/shell/browser/shell_navigation_ui_data.h"
 #include "extensions/shell/browser/shell_prefs.h"
-#include "extensions/shell/common/shell_extensions_client.h"
+#include "content/shell/common/extensions/rch_extensions_client.h"
 #include "content/shell/browser/extensions/shell_action_api.h"
 #include "content/shell/browser/extensions/shell_extensions_browser_api_provider.h"
 #include "content/shell/browser/extensions/shell_tabs.h"
@@ -118,6 +126,39 @@ const extensions::Extension* GetExtension(SiteInstance* site_instance) {
       .GetExtensionOrAppByURL(site_instance->GetSiteURL());
 }
 
+// What Chrome's UnpackedInstaller does and app_shell's loader does not:
+// index the extension's declarativeNetRequest rulesets and record them in its
+// prefs as installed. RulesMonitorService loads only rulesets whose checksum
+// the prefs hold, so without this an extension's static rules never apply.
+void IndexRulesets(const base::FilePath& dir, BrowserContext* browser_context) {
+  std::string error;
+  scoped_refptr<extensions::Extension> extension =
+      extensions::file_util::LoadExtension(
+          dir, extensions::mojom::ManifestLocation::kCommandLine,
+          extensions::Extension::FOLLOW_SYMLINKS_ANYWHERE, &error);
+  if (!extension)
+    return;
+  namespace dnr = extensions::declarative_net_request;
+  // Start-up, before the first window: reading a few JSON files here is what
+  // Chrome's installer does as well.
+  base::ScopedAllowBlockingForTesting allow_blocking;
+  dnr::InstallIndexHelper::Result result =
+      dnr::InstallIndexHelper::IndexStaticRulesetsUnsafe(
+          *extension, dnr::FileBackedRulesetSource::RulesetFilter::kIncludeAll,
+          dnr::RulesetSource::kRaiseErrorOnInvalidRules |
+              dnr::RulesetSource::kRaiseWarningOnLargeRegexRules);
+  if (result.error) {
+    LOG(WARNING) << "declarativeNetRequest rules in " << dir << ": "
+                 << *result.error;
+    return;
+  }
+  extensions::ExtensionPrefs::Get(browser_context)
+      ->OnExtensionInstalled(extension.get(), extensions::Extension::ENABLED,
+                             syncer::StringOrdinal(),
+                             extensions::kInstallFlagNone, std::string(),
+                             result.ruleset_install_prefs);
+}
+
 void LoadExtensions(extensions::ShellExtensionSystem* system,
                     BrowserContext* browser_context) {
   std::vector<base::FilePath> dirs;
@@ -146,6 +187,7 @@ void LoadExtensions(extensions::ShellExtensionSystem* system,
   }
 
   for (const base::FilePath& dir : dirs) {
+    IndexRulesets(dir, browser_context);
     if (!system->LoadExtension(dir))
       LOG(WARNING) << "could not load the extension in " << dir;
   }
@@ -348,11 +390,9 @@ void Init(BrowserContext* browser_context) {
   State& s = state();
   s.browser_context = browser_context;
 
-  s.extensions_client = std::make_unique<extensions::ShellExtensionsClient>();
-  // tabs, action, webNavigation, cookies and extension: //chrome's APIs,
-  // which this port implements itself (browser/extensions/).
-  s.extensions_client->AddAPIProvider(
-      std::make_unique<extensions::RChExtensionsAPIProvider>());
+  // app_shell's, with the //chrome APIs this port implements
+  // (browser/extensions/); see rch_extensions_client.h.
+  s.extensions_client = std::make_unique<extensions::RChExtensionsClient>();
   extensions::ExtensionsClient::Set(s.extensions_client.get());
 
   s.browser_client = std::make_unique<extensions::ShellExtensionsBrowserClient>();
@@ -379,6 +419,13 @@ void Init(BrowserContext* browser_context) {
       extensions::ExtensionSystem::Get(browser_context));
   system->InitForRegularProfile(true /* extensions_enabled */);
   Toolbar() = std::make_unique<ActionToolbar>(browser_context);
+  // content_shell created its context's keyed services before these
+  // factories existed, so the ones meant to come up with the context come up
+  // on first use instead. WebRequestAPI must be there before the extensions
+  // load: it counts the ones with webRequest or declarativeNetRequest as
+  // they do, and proxies no request while that count is zero.
+  extensions::BrowserContextKeyedAPIFactory<extensions::WebRequestAPI>::Get(
+      browser_context);
   LoadExtensions(system, browser_context);
   system->FinishInitialization();
 }
@@ -430,6 +477,12 @@ void RenderProcessWillLaunch(RenderProcessHost* host) {
   host->AddFilter(new extensions::ExtensionMessageFilter(host->GetID(), context));
   host->AddFilter(
       new extensions::MessagingAPIMessageFilter(host->GetID(), context));
+  // What app_shell (made for Chrome Apps) leaves out and Chrome adds: the
+  // calls a Manifest V3 extension's service worker makes reach the browser
+  // through here.
+  host->AddFilter(new extensions::ExtensionServiceWorkerMessageFilter(
+      host->GetID(), context,
+      host->GetStoragePartition()->GetServiceWorkerContext()));
 }
 
 void SiteInstanceGotProcess(SiteInstance* site_instance) {
@@ -482,6 +535,8 @@ void ExposeInterfacesToRenderer(
   associated_registry->AddInterface<extensions::mojom::RendererHost>(
       base::BindRepeating(&extensions::RendererStartupHelper::BindForRenderer,
                           id));
+  associated_registry->AddInterface<extensions::mojom::ServiceWorkerHost>(
+      base::BindRepeating(&extensions::ServiceWorkerHost::BindReceiver, id));
 }
 
 void RegisterAssociatedInterfaceBindersForRenderFrameHost(

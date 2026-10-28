@@ -6,6 +6,7 @@
 
 #include "content/shell/common/extensions/api/api_features.h"
 #include "content/shell/common/extensions/api/generated_schemas.h"
+#include "content/shell/common/extensions/api/manifest_features.h"
 #include "content/shell/common/extensions/api/permission_features.h"
 #include "extensions/common/alias.h"
 #include "extensions/common/mojom/api_permission_id.mojom-shared.h"
@@ -43,7 +44,8 @@ void RChExtensionsAPIProvider::AddAPIFeatures(FeatureProvider* provider) {
 
 void RChExtensionsAPIProvider::AddManifestFeatures(
     FeatureProvider* provider) {
-  // "action" and the other manifest keys the target extensions use are core.
+  // "action": core has its handler but, in 114, not its feature.
+  AddRChManifestFeatures(provider);
 }
 
 void RChExtensionsAPIProvider::AddPermissionFeatures(

@@ -14,7 +14,7 @@
 #include "extensions/renderer/dispatcher_delegate.h"
 #include "extensions/renderer/extension_frame_helper.h"
 #include "extensions/renderer/extensions_renderer_client.h"
-#include "extensions/shell/common/shell_extensions_client.h"
+#include "content/shell/common/extensions/rch_extensions_client.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -65,9 +65,7 @@ extensions::Dispatcher* dispatcher() {
 
 void RenderThreadStarted() {
   State& s = state();
-  s.extensions_client = std::make_unique<extensions::ShellExtensionsClient>();
-  s.extensions_client->AddAPIProvider(
-      std::make_unique<extensions::RChExtensionsAPIProvider>());
+  s.extensions_client = std::make_unique<extensions::RChExtensionsClient>();
   extensions::ExtensionsClient::Set(s.extensions_client.get());
   s.renderer_client = std::make_unique<RendererClient>();
   extensions::ExtensionsRendererClient::Set(s.renderer_client.get());

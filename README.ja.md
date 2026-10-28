@@ -142,6 +142,26 @@ sh install.sh /path/to/dir/with/content_shell
 - **Qt 非依存の確認:** `readelf -d /boot/home/RChromium/content_shell | grep NEEDED`
   の出力に `libbe.so` などが並び、`libQt5*` がないことを確認します。
 
+## 拡張機能
+
+Chrome 拡張 (Manifest V3) は、プロファイルの `Extensions` フォルダー
+(`~/config/settings/RChromium/Extensions`) から読み込みます。展開した拡張 1 つが
+フォルダー 1 つです。`--load-extension=<dir>` で 1 回だけ読み込むこともできます。action の
+ある拡張はツールバーにバッジ付きのボタンが付き、押すとポップアップが小さなウィンドウで
+開きます。`tabs`、`action`、`webNavigation`、`declarativeNetRequest`、`storage`、
+`scripting`、コンテンツスクリプトが動きます。`chrome.cookies` はこのビルドではまだ
+使えません。アラビア語とカラー絵文字のフォントがパッケージに入っています。
+
+ページはそれぞれのプロセスで描画され、そのプロセスは Web コンテンツを扱う前に root 権限を
+手放します。乗っ取られたページがユーザーのファイルを書き込むことはできませんが、完全な
+サンドボックスではありません。
+
+## 貢献者
+
+- [idumych](https://github.com/idumych) -- 拡張機能、レンダラーのサンドボックス、
+  マルチプロセス、アラビア語とカラー絵文字のフォント (arm64・x86_64 版の Chromium 154
+  向けに書かれ、この版に移植)
+
 ## AI に関する開示
 
 このプログラムは Claude と共に書かれました。

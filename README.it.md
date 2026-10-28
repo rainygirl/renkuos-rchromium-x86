@@ -148,6 +148,27 @@ Da una shell:
 - **Verifica che sia privo di Qt:** `readelf -d /boot/home/RChromium/content_shell | grep NEEDED`
   elenca `libbe.so` e simili e nessuna `libQt5*`.
 
+## Estensioni
+
+Le estensioni di Chrome (Manifest V3) si caricano dalla cartella `Extensions` del
+profilo, `~/config/settings/RChromium/Extensions`, una cartella per estensione
+non compressa; `--load-extension=<dir>` ne carica una per una sola esecuzione.
+Ogni estensione con un'azione ha un pulsante nella barra degli strumenti con il
+suo badge; un clic apre il suo popup in una piccola finestra. Funzionano `tabs`,
+`action`, `webNavigation`, `declarativeNetRequest`, `storage`, `scripting` e gli
+script di contenuto; `chrome.cookies` non ancora, in questa build. I font per
+l'arabo e per le emoji a colori sono nel pacchetto.
+
+Le pagine sono disegnate in processi propri, che rinunciano ai privilegi di root
+prima di toccare il contenuto web: una pagina compromessa non può scrivere i tuoi
+file, ma non è una sandbox completa.
+
+## Contributori
+
+- [idumych](https://github.com/idumych) -- estensioni, sandbox dei renderer,
+  multiprocesso, font per l'arabo e le emoji a colori (scritti per le versioni
+  arm64 e x86_64, Chromium 154, e portati in questa)
+
 ## Dichiarazione sull'uso dell'IA
 
 Questo programma e' stato scritto con Claude.

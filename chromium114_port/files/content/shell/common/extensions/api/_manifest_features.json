@@ -1,0 +1,15 @@
+// Copyright 2026 The RENKU project
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+// R Chromium on 114: the "action" manifest key. Its handler is core, but in
+// 114 the feature that lets a manifest use the key is //chrome's
+// (chrome/common/extensions/api/_manifest_features.json), and without it the
+// action API, which depends on manifest:action, is never exposed.
+{
+  "action": {
+    "channel": "stable",
+    "extension_types": ["extension"],
+    "min_manifest_version": 3
+  }
+}

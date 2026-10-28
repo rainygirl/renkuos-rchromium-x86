@@ -581,6 +581,7 @@ if (is_haiku) {
       "browser/extensions/shell_tabs_api.h",
       "browser/haiku_extensions.cc",
       "browser/haiku_extensions.h",
+      "common/extensions/rch_extensions_client.h",
       "common/extensions/shell_extensions_api_provider.cc",
       "common/extensions/shell_extensions_api_provider.h",
       "renderer/haiku_extensions_renderer.cc",
