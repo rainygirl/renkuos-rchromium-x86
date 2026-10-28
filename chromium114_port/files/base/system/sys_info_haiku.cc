@@ -9,6 +9,7 @@
 
 #include <OS.h>
 
+#include "base/cpu.h"
 #include "base/notreached.h"
 
 namespace base {
@@ -38,6 +39,13 @@ uint64_t SysInfo::AmountOfAvailablePhysicalMemoryImpl() {
   // Haiku reports pages in use rather than a reclaimable figure, so this is
   // the conservative reading: what is free now, not what could be freed.
   return AmountOfMemory(/*available=*/true);
+}
+
+// static
+std::string SysInfo::CPUModelName() {
+  // CPUID's brand string, which is what the Linux branch reads out of
+  // /proc/cpuinfo: "Intel(R) Atom(TM) CPU Z520 @ 1.33GHz" on the VAIO P.
+  return CPU().cpu_brand();
 }
 
 }  // namespace base

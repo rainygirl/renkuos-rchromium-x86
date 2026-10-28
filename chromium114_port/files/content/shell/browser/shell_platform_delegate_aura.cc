@@ -4,6 +4,11 @@
 
 #include "content/shell/browser/shell_platform_delegate.h"
 
+#include <map>
+
+#include "base/no_destructor.h"
+#include "content/shell/browser/haiku_toolbar.h"
+
 #include "base/containers/contains.h"
 #include "build/build_config.h"
 #include "content/public/browser/render_widget_host_view.h"
@@ -58,7 +63,22 @@
 namespace content {
 
 #if BUILDFLAG(IS_HAIKU)
+
+// Extensions (haiku_extensions.h) open popups and are told about clicks
+// through here; haiku_toolbar.h is what they see of the toolbar.
+namespace haiku_extensions {
+void OnActionClicked(WebContents* web_contents, const std::string& id);
+}
+
 namespace {
+
+// Each tab's toolbar window, for GetHaikuToolbarWidget().
+std::map<WebContents*, gfx::AcceleratedWidget>& ToolbarWidgets() {
+  static base::NoDestructor<std::map<WebContents*, gfx::AcceleratedWidget>>
+      widgets;
+  return *widgets;
+}
+bool g_next_window_without_toolbar = false;
 
 // Defined below, next to the rest of the install code. Declared here because
 // the toolbar client is written before it and calls into it.
@@ -133,6 +153,12 @@ class HaikuChromeClient : public ui::HaikuBrowserChromeClient {
                        base::Unretained(this)));
   }
 
+  void OnExtensionAction(const std::string& extension_id) override {
+    ui_task_runner_->PostTask(
+        FROM_HERE, base::BindOnce(&HaikuChromeClient::RunExtensionAction,
+                                  base::Unretained(this), extension_id));
+  }
+
  private:
   // On the UI thread: ask for the manifest again and install what comes back.
   void RunInstall() {
@@ -192,6 +218,11 @@ class HaikuChromeClient : public ui::HaikuBrowserChromeClient {
         shell_->Stop();
         return;
     }
+  }
+
+  void RunExtensionAction(const std::string& extension_id) {
+    if (shell_ != nullptr && shell_->web_contents() != nullptr)
+      haiku_extensions::OnActionClicked(shell_->web_contents(), extension_id);
   }
 
   void RunNavigate(const GURL& url) {
@@ -323,7 +354,11 @@ void ShellPlatformDelegate::CreatePlatformWindow(
   // RCH_NO_TOOLBAR=1 skips all of it, which is what an installed web app
   // sets: an app is a window onto one site and has no address to type.
   shell_data.widget = aura->host()->GetAcceleratedWidget();
-  if (getenv("RCH_NO_TOOLBAR") == nullptr) {
+  const bool without_toolbar = g_next_window_without_toolbar;
+  g_next_window_without_toolbar = false;
+  if (getenv("RCH_NO_TOOLBAR") == nullptr && !without_toolbar) {
+    if (shell->web_contents())
+      ToolbarWidgets()[shell->web_contents()] = shell_data.widget;
     shell_data.chrome = new HaikuChromeClient(shell);
     shell_data.chrome->ScheduleTestInstall();
     const int inset =
@@ -354,6 +389,7 @@ void ShellPlatformDelegate::CleanUp(Shell* shell) {
   ShellData& shell_data = shell_data_map_[shell];
   if (shell_data.chrome != nullptr)
     shell_data.chrome->Detach();
+  ToolbarWidgets().erase(shell->web_contents());
 
   // Take the WebContents' window out of this Shell's root before the root --
   // and the BWindow behind it -- is destroyed with shell_data below.
@@ -908,6 +944,18 @@ void ShellPlatformDelegate::SetTitle(Shell* shell,
 }
 
 void ShellPlatformDelegate::MainFrameCreated(Shell* shell) {}
+
+#if BUILDFLAG(IS_HAIKU)
+gfx::AcceleratedWidget GetHaikuToolbarWidget(WebContents* web_contents) {
+  auto it = ToolbarWidgets().find(web_contents);
+  return it == ToolbarWidgets().end() ? gfx::kNullAcceleratedWidget
+                                      : it->second;
+}
+
+void SetNextHaikuWindowWithoutToolbar() {
+  g_next_window_without_toolbar = true;
+}
+#endif
 
 bool ShellPlatformDelegate::DestroyShell(Shell* shell) {
   return false;  // Shell destroys itself.

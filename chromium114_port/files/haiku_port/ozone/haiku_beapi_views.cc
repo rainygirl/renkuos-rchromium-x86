@@ -22,6 +22,7 @@
 #include <stdlib.h>
 
 #include <AppDefs.h>
+#include <Bitmap.h>
 #include <Clipboard.h>
 #include <ControlLook.h>
 #include <Cursor.h>
@@ -520,6 +521,7 @@ constexpr uint32 kMsgGo = 'rchG';
 constexpr uint32 kMsgAddBookmark = 'rchA';
 constexpr uint32 kMsgOpenBookmarks = 'rchL';
 constexpr uint32 kMsgInstall = 'rchI';
+constexpr uint32 kMsgExtensionAction = 'rchX';
 
 constexpr float kChromeHeight = 30.0f;
 constexpr float kButtonSize = 24.0f;
@@ -1028,6 +1030,92 @@ class BookmarksWindow : public BWindow {
   BOutlineListView* list_ = nullptr;
 };
 
+// One extension's action: its icon, with the badge text on a coloured plate
+// across the bottom right, as Chrome draws it. A click goes to the toolbar as
+// kMsgExtensionAction carrying the extension's ID.
+class ExtensionActionButton : public BView {
+ public:
+  ExtensionActionButton(const std::string& id)
+      : BView(BRect(0, 0, kButtonSize - 1, kButtonSize - 1), id.c_str(),
+              B_FOLLOW_LEFT | B_FOLLOW_TOP, B_WILL_DRAW),
+        id_(id) {
+    SetViewUIColor(B_PANEL_BACKGROUND_COLOR);
+  }
+
+  ~ExtensionActionButton() override { delete icon_; }
+
+  const std::string& id() const { return id_; }
+
+  void Set(const std::string& title,
+           const uint32_t* argb,
+           int width,
+           int height,
+           const std::string& badge,
+           uint32_t badge_argb) {
+    SetToolTip(title.c_str());
+    delete icon_;
+    icon_ = nullptr;
+    if (argb != nullptr && width > 0 && height > 0) {
+      // 0xAARRGGBB in memory on a little-endian machine is B, G, R, A:
+      // B_RGBA32's own byte order.
+      icon_ = new BBitmap(BRect(0, 0, width - 1, height - 1), B_RGBA32);
+      const int row = width * 4;
+      for (int y = 0; y < height; y++) {
+        memcpy(static_cast<uint8*>(icon_->Bits()) + y * icon_->BytesPerRow(),
+               argb + y * width, row);
+      }
+    }
+    badge_ = badge;
+    badge_color_ = {static_cast<uint8>((badge_argb >> 16) & 0xff),
+                    static_cast<uint8>((badge_argb >> 8) & 0xff),
+                    static_cast<uint8>(badge_argb & 0xff), 255};
+    Invalidate();
+  }
+
+  void Draw(BRect update_rect) override {
+    BRect rect = Bounds();
+    SetHighUIColor(B_PANEL_BACKGROUND_COLOR);
+    FillRect(rect);
+    if (icon_ != nullptr) {
+      BRect icon_rect(0, 0, 15, 15);
+      icon_rect.OffsetTo((rect.Width() - 15) / 2, (rect.Height() - 15) / 2);
+      SetDrawingMode(B_OP_ALPHA);
+      SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
+      DrawBitmap(icon_, icon_->Bounds(), icon_rect, B_FILTER_BITMAP_BILINEAR);
+      SetDrawingMode(B_OP_COPY);
+    }
+    if (!badge_.empty()) {
+      BFont font(be_bold_font);
+      font.SetSize(8.0f);
+      SetFont(&font);
+      const float text_width = font.StringWidth(badge_.c_str());
+      BRect plate(rect.right - text_width - 4, rect.bottom - 9, rect.right,
+                  rect.bottom);
+      if (plate.left < rect.left)
+        plate.left = rect.left;
+      SetHighColor(badge_color_);
+      FillRoundRect(plate, 2, 2);
+      SetHighColor(255, 255, 255);
+      SetLowColor(badge_color_);
+      DrawString(badge_.c_str(), BPoint(plate.left + 2, plate.bottom - 1));
+    }
+  }
+
+  void MouseUp(BPoint where) override {
+    if (!Bounds().Contains(where) || Window() == nullptr)
+      return;
+    BMessage message(kMsgExtensionAction);
+    message.AddString("id", id_.c_str());
+    Window()->PostMessage(&message, Parent());
+  }
+
+ private:
+  std::string id_;
+  BBitmap* icon_ = nullptr;
+  std::string badge_;
+  rgb_color badge_color_ = {200, 30, 30, 255};
+};
+
 class BrowserChromeView : public BView {
  public:
   BrowserChromeView(BRect frame, HaikuBrowserChromeClient* client)
@@ -1112,6 +1200,12 @@ class BrowserChromeView : public BView {
       case kMsgInstall:
         client_->OnInstall();
         return;
+      case kMsgExtensionAction: {
+        const char* id = nullptr;
+        if (message->FindString("id", &id) == B_OK && id != nullptr)
+          client_->OnExtensionAction(id);
+        return;
+      }
       default:
         BView::MessageReceived(message);
     }
@@ -1159,6 +1253,40 @@ class BrowserChromeView : public BView {
     Invalidate();
   }
 
+  // Adds or updates one extension's button; `visible` false removes it.
+  void SetExtensionAction(const std::string& id,
+                          bool visible,
+                          const std::string& title,
+                          const uint32_t* argb,
+                          int width,
+                          int height,
+                          const std::string& badge,
+                          uint32_t badge_argb) {
+    auto it = std::find_if(actions_.begin(), actions_.end(),
+                           [&id](ExtensionActionButton* button) {
+                             return button->id() == id;
+                           });
+    if (!visible) {
+      if (it == actions_.end())
+        return;
+      RemoveChild(*it);
+      delete *it;
+      actions_.erase(it);
+    } else {
+      ExtensionActionButton* button = nullptr;
+      if (it == actions_.end()) {
+        button = new ExtensionActionButton(id);
+        AddChild(button);
+        actions_.push_back(button);
+      } else {
+        button = *it;
+      }
+      button->Set(title, argb, width, height, badge, badge_argb);
+    }
+    Layout(Bounds().Width());
+    Invalidate();
+  }
+
  private:
   void ShowBookmarks() {
     if (bookmarks_window_ == nullptr)
@@ -1177,11 +1305,17 @@ class BrowserChromeView : public BView {
   // and the two bookmark buttons at the right edge.
   void Layout(float width) {
     const float top = (kChromeHeight - kButtonSize) / 2.0f;
-    const int right_buttons = install_->IsHidden() ? 2 : 3;
+    const int right_buttons = (install_->IsHidden() ? 2 : 3) +
+                              static_cast<int>(actions_.size());
     const float right_block = right_buttons * (kButtonSize + kPadding);
     bookmarks_->MoveTo(width - kButtonSize - kPadding, top);
     star_->MoveTo(width - 2 * kButtonSize - 2 * kPadding, top);
     install_->MoveTo(width - 3 * kButtonSize - 3 * kPadding, top);
+    // Extension buttons, as in Chrome, between the address field and the
+    // browser's own buttons.
+    int slot = install_->IsHidden() ? 3 : 4;
+    for (auto it = actions_.rbegin(); it != actions_.rend(); ++it, ++slot)
+      (*it)->MoveTo(width - slot * (kButtonSize + kPadding), top);
     const float address_width =
         width - address_left_ - kPadding - right_block;
     address_->ResizeTo(address_width > 40.0f ? address_width : 40.0f,
@@ -1213,6 +1347,7 @@ class BrowserChromeView : public BView {
   ChromeButton* install_ = nullptr;
   ChromeButton* star_ = nullptr;
   ChromeButton* bookmarks_ = nullptr;
+  std::vector<ExtensionActionButton*> actions_;
   BTextControl* address_ = nullptr;
   float address_left_ = 0.0f;
 
@@ -1322,6 +1457,26 @@ void SetBrowserChromeInstallable(gfx::AcceleratedWidget widget,
   BrowserChromeView* chrome = ChromeOf(window);
   if (chrome != nullptr)
     chrome->SetInstallable(installable, app_name);
+  window->Unlock();
+}
+
+void SetBrowserChromeExtensionAction(gfx::AcceleratedWidget widget,
+                                     const std::string& extension_id,
+                                     bool visible,
+                                     const std::string& title,
+                                     const uint32_t* argb,
+                                     int width,
+                                     int height,
+                                     const std::string& badge,
+                                     uint32_t badge_argb) {
+  BWindow* window = NativeWindowFor(widget);
+  if (window == nullptr || !window->Lock())
+    return;
+  BrowserChromeView* chrome = ChromeOf(window);
+  if (chrome != nullptr) {
+    chrome->SetExtensionAction(extension_id, visible, title, argb, width,
+                               height, badge, badge_argb);
+  }
   window->Unlock();
 }
 

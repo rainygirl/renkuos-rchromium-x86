@@ -28,6 +28,8 @@ class HaikuBrowserChromeClient {
   // The install button. Only ever reachable while the button is showing,
   // which SetBrowserChromeInstallable() decides.
   virtual void OnInstall() = 0;
+  // An extension's toolbar button.
+  virtual void OnExtensionAction(const std::string& extension_id) {}
 
  protected:
   ~HaikuBrowserChromeClient() = default;
@@ -63,6 +65,18 @@ void SetBrowserChromeNavState(gfx::AcceleratedWidget widget,
 void SetBrowserChromeInstallable(gfx::AcceleratedWidget widget,
                                  bool installable,
                                  const std::string& app_name);
+
+// One extension's toolbar button: its title (the tooltip), its icon as
+// SetFileIcon() takes one, and its badge. `visible` false removes it.
+void SetBrowserChromeExtensionAction(gfx::AcceleratedWidget widget,
+                                     const std::string& extension_id,
+                                     bool visible,
+                                     const std::string& title,
+                                     const uint32_t* argb,
+                                     int width,
+                                     int height,
+                                     const std::string& badge,
+                                     uint32_t badge_argb);
 
 // The BWindow's own title, which is what Deskbar and the window tab show.
 //
