@@ -49,6 +49,7 @@ line this port stops at while it is still a gcc build.
 | `port/port-shell-external-protocol.py` | slack:, mailto: and other schemes go to Haiku's handler through /bin/open |
 | `port/port-shell-load-first.py` | `--rch-load-first=<https URL>`: load a page out of sight before the window opens (R Slack's sign-in) |
 | `port/port-shell-ua-switch.py` | `--user-agent=<string>` is honoured, as in Chrome (R Slack says a newer Chrome than 114) |
+| `port/port-recaptcha-time.py` | reCAPTCHA's own 10-15 s timers run six times as long, so it starts on a slow CPU (the VAIO P's Atom) |
 | `files/` | 39 whole files this port adds |
 
 `port-fd0-workaround.py` is new and is not a carry-over: the block it installs
