@@ -47,7 +47,6 @@ line this port stops at while it is still a gcc build.
 | `port/port-video.py` | no AV1, VP9 opt-in, nearest-neighbour video frames |
 | `port/port-msvdx.py` | hardware H.264 on the GMA500 (with `files/media/gpu/haiku/`) |
 | `port/port-shell-external-protocol.py` | slack:, mailto: and other schemes go to Haiku's handler through /bin/open |
-| `port/port-shell-user-agent.py` | user agent and client hints say Chromium 114 on Haiku, not content_shell 999 |
 | `port/port-shell-load-first.py` | `--rch-load-first=<https URL>`: load a page out of sight before the window opens (R Slack's sign-in) |
 | `files/` | 39 whole files this port adds |
 
