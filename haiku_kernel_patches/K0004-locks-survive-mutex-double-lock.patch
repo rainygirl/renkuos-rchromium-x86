@@ -1,0 +1,174 @@
+Haiku kernel (KDEBUG): a thread asking again for a mutex it holds panics.
+
+    PANIC: _mutex_lock(): double lock of 0x8dfd495c by thread 21813
+    Thread 21813 "Chrome_IOThread"
+
+      panic
+      _mutex_lock
+      mutex_switch_from_read_lock
+      vm_area_get_locked_cache
+      wait_if_address_range_is_wired<AddressSpaceWriteLocker>
+      _user_unmap_memory
+      handle_syscall
+
+Seen once on the Sony VAIO P (hrev99002+148+dirty, KDEBUG kernel) while R
+Slack loaded Slack in Chromium 114: munmap() from Chromium's IO thread.
+
+## What is known
+
+_user_unmap_memory() enters holding only the address space's write lock, and
+wait_if_address_range_is_wired() takes each area's cache through an
+AreaCacheLocker that is released at the end of every loop pass. Nothing on
+that path can already hold the cache. So the thread took this cache lock in
+an earlier call -- a syscall or a page fault -- and never released it. Under
+KDEBUG `holder` *is* the lock state, so the thread really does hold it, and
+nobody else can take it until it lets go. The leak itself is not found yet:
+upstream Haiku has no fix for it (vm.cpp, VMCache.cpp, lock.cpp compared up
+to 2026-10-31), and the machine's local kernel changes (page writer,
+socket.cpp) do not touch cache locks.
+
+## The change
+
+- A double lock is logged with dprintf() and treated as granted, instead of
+  a panic. The caller's own unlock then releases the lock, which is what it
+  would have been anyway once the leaking path is fixed.
+- Under KDEBUG every mutex acquisition records the thread and six return
+  addresses in a 2048-entry table hashed by the lock's address, and the log
+  line prints where the lock was first taken and where it was asked for
+  again. The addresses are kernel_x86's; `nm -n kernel_x86` resolves them.
+
+Only KDEBUG kernels are affected: without KDEBUG the same leak would hang the
+thread on its own lock instead, and none of this code is compiled.
+
+Look for `asks again for mutex` in /var/log/syslog after the next heavy
+Chromium session to find the leaking caller.
+
+--- a/src/system/kernel/locks/lock.cpp
++++ b/src/system/kernel/locks/lock.cpp
+@@ -12,6 +12,7 @@
+ #include <stdlib.h>
+ #include <string.h>
+ 
++#include <arch/debug.h>
+ #include <debug.h>
+ #include <interrupts.h>
+ #include <kernel.h>
+@@ -1002,6 +1003,74 @@
+ }
+ 
+ 
++#if KDEBUG
++// Where each mutex was last acquired, in a small table hashed by the lock's
++// address: when a thread asks again for a lock it already holds, this says
++// where it took it the first time. Collisions only lose older entries.
++struct mutex_acquire_site {
++	mutex*		lock;
++	thread_id	thread;
++	addr_t		pc[6];
++};
++static const int32 kMutexAcquireSites = 2048;
++static mutex_acquire_site sMutexAcquireSites[kMutexAcquireSites];
++
++
++static inline mutex_acquire_site*
++mutex_acquire_site_for(mutex* lock)
++{
++	return &sMutexAcquireSites[((addr_t)lock >> 3) % kMutexAcquireSites];
++}
++
++
++static void
++record_mutex_acquire(mutex* lock, thread_id thread)
++{
++	mutex_acquire_site* site = mutex_acquire_site_for(lock);
++	addr_t pc[6];
++	memset(pc, 0, sizeof(pc));
++	arch_get_stack_trace(pc, 6, 0, 1, STACK_TRACE_KERNEL);
++	site->lock = lock;
++	site->thread = thread;
++	memcpy(site->pc, pc, sizeof(pc));
++}
++
++
++/*!	The calling thread asks for a mutex it already holds. So far that has
++	been a lock an earlier call on the same thread never released: the
++	thread really holds it, and nobody else will get it until this thread
++	lets go. A panic takes the machine down for that (seen from munmap()
++	under Chromium 114 on 32-bit x86); treating the request as granted lets
++	the caller's own unlock release it. Logged with where the lock was taken,
++	so that the leak can be found.
++*/
++static void
++report_mutex_double_lock(mutex* lock)
++{
++	thread_id thread = thread_get_current_thread_id();
++	dprintf("_mutex_lock(): thread %" B_PRId32 " asks again for mutex %p "
++		"(\"%s\") it already holds; going on\n", thread, lock,
++		lock->name != NULL ? lock->name : "");
++
++	mutex_acquire_site* site = mutex_acquire_site_for(lock);
++	if (site->lock == lock) {
++		dprintf("  first taken by thread %" B_PRId32 " at", site->thread);
++		for (int32 i = 0; i < 6 && site->pc[i] != 0; i++)
++			dprintf(" %#" B_PRIxADDR, site->pc[i]);
++		dprintf("\n");
++	}
++
++	addr_t pc[8];
++	memset(pc, 0, sizeof(pc));
++	int32 count = arch_get_stack_trace(pc, 8, 0, 1, STACK_TRACE_KERNEL);
++	dprintf("  asked again at");
++	for (int32 i = 0; i < count; i++)
++		dprintf(" %#" B_PRIxADDR, pc[i]);
++	dprintf("\n");
++}
++#endif
++
++
+ KDEBUG_STATIC status_t
+ _mutex_lock(mutex* lock, void* _locker)
+ {
+@@ -1027,10 +1096,11 @@
+ #if KDEBUG
+ 	if (lock->holder == 0 || lock->holder == -1) {
+ 		lock->holder = thread_get_current_thread_id();
++		record_mutex_acquire(lock, lock->holder);
+ 		return B_OK;
+ 	} else if (lock->holder == thread_get_current_thread_id()) {
+-		panic("_mutex_lock(): double lock of %p by thread %" B_PRId32, lock,
+-			lock->holder);
++		report_mutex_double_lock(lock);
++		return B_OK;
+ 	} else if (lock->holder < -1) {
+ 		panic("_mutex_lock(): using uninitialized lock %p", lock);
+ 	}
+@@ -1061,6 +1131,7 @@
+ #if KDEBUG
+ 	if (error == B_OK) {
+ 		ASSERT(lock->holder == waiter.thread->id);
++		record_mutex_acquire(lock, waiter.thread->id);
+ 	} else {
+ 		// This should only happen when the mutex was destroyed.
+ 		ASSERT(waiter.thread == NULL);
+@@ -1129,10 +1200,11 @@
+ #if KDEBUG
+ 	if (lock->holder < 0) {
+ 		lock->holder = thread_get_current_thread_id();
++		record_mutex_acquire(lock, lock->holder);
+ 		return B_OK;
+ 	} else if (lock->holder == thread_get_current_thread_id()) {
+-		panic("_mutex_lock(): double lock of %p by thread %" B_PRId32, lock,
+-			lock->holder);
++		report_mutex_double_lock(lock);
++		return B_OK;
+ 	} else if (lock->holder == 0) {
+ 		panic("_mutex_lock(): using uninitialized lock %p", lock);
+ 	}
+@@ -1222,6 +1294,7 @@
+ 
+ 	if (lock->holder < 0) {
+ 		lock->holder = thread_get_current_thread_id();
++		record_mutex_acquire(lock, lock->holder);
+ 		return B_OK;
+ 	} else if (lock->holder == 0) {
+ 		panic("_mutex_trylock(): using uninitialized lock %p", lock);

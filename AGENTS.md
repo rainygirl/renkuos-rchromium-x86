@@ -2078,3 +2078,29 @@ doing this**: that flag is on the compile command line of every target that
 uses it, so ~178 objects, including the heavy content/browser jumbo units, are
 invalidated. Generating the snapshot by hand and leaving the flag alone would
 have been cheaper if the generator could be made to run at all.
+
+## 2026-10-31: R Slack on 114 -- user agent, reCAPTCHA, a kernel double lock
+
+rchromium_x86 114.0.5735.199-16 and -17, for R Slack on the VAIO P.
+
+- `port-shell-ua-switch.py` (-16): content_shell honours `--user-agent`.
+  Slack refuses Chrome < 138 ("Please update your browser", and "This
+  browser is no longer supported" at ssb/signin); R Slack passes a Chrome/154
+  user agent to its own windows only.
+- `port-recaptcha-time.py` (-17): reCAPTCHA's worker needs about 20 s for its
+  first answer on the Atom, while its frames give each other 10-15 s
+  ("reCAPTCHA Timeout", the checkbox spins for ever). At document start the
+  renderer wraps setTimeout so that timers of 10-15 s set by reCAPTCHA's own
+  scripts run six times as long. Checked on the reCAPTCHA demo page: the
+  image challenge appears. An extension would have been the place for it,
+  but any content script crashes this build's renderer (SIGSEGV, even a
+  one-line isolated-world script; an extension without content scripts
+  loads fine). That crash is still open.
+- With Slack loaded, the VAIO panicked in KDL: `_mutex_lock(): double lock`
+  from `munmap()` on Chrome_IOThread. Kernel, not Chromium: see
+  `haiku_kernel_patches/K0004-*.patch`. The VAIO runs a kernel with K0004
+  (built natively in `~/dragtest/haiku`, repacked into the haiku package;
+  the previous package is in `~/kpkg/backup`). It is *not* in
+  `renkuos-fixes/`: that package is a different build from the VAIO's own,
+  and K0004 only logs the leak, it does not fix it. Read the syslog for
+  `asks again for mutex` to find the caller that leaks the cache lock.
