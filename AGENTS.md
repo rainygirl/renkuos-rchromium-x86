@@ -2104,3 +2104,22 @@ rchromium_x86 114.0.5735.199-16 and -17, for R Slack on the VAIO P.
   `renkuos-fixes/`: that package is a different build from the VAIO's own,
   and K0004 only logs the leak, it does not fix it. Read the syslog for
   `asks again for mutex` to find the caller that leaks the cache lock.
+
+## 2026-11-08: input method composition (-18)
+
+rchromium_x86 114.0.5735.199-18. Korean input (renkuos-koreanime) and any
+other RenkuOS input method compose inside pages.
+
+- `InputMethodMinimal` had no composition at all. `haiku_input_method.*`
+  (`InputMethodHaiku : InputMethodBase`) turns B_INPUT_METHOD_EVENT into a
+  composition on the focused TextInputClient: SetCompositionText /
+  InsertText / ClearCompositionText. Pages get compositionstart / update /
+  end, and a keydown with key "Process" (keyCode 229, `isComposing`) per key
+  the method consumed -- one per CHANGED marked `koreanime:key = true`, or
+  per unconfirmed change from methods that do not mark them.
+- The content view is B_INPUT_METHOD_AWARE; `HaikuContentView` forwards the
+  events to the UI thread (`haiku_ime_event.h`, `SetImeSink`). A click or a
+  focus change ends the composition and sends B_INPUT_METHOD_STOPPED to the
+  method's `be:reply_to`.
+- Events marked `koreanime:direct` are skipped: they carry key presses for
+  views that are not input method aware (see renkuos-koreanime AGENTS.md).

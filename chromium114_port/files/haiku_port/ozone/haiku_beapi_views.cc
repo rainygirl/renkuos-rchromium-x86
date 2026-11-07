@@ -144,7 +144,11 @@ BWindow* CreateBrowserNativeWindow(BRect frame) {
 }
 
 HaikuContentView::HaikuContentView()
-    : BView("Chromium canvas", B_WILL_DRAW | B_FRAME_EVENTS | B_NAVIGABLE) {
+    : BView("Chromium canvas",
+            B_WILL_DRAW | B_FRAME_EVENTS | B_NAVIGABLE |
+                // Input method compositions come here, inline, instead of
+                // going to input_server's bottom-line window.
+                B_INPUT_METHOD_AWARE) {
   SetViewColor(B_TRANSPARENT_COLOR);
 }
 
@@ -424,9 +428,38 @@ void HaikuContentView::DispatchWheel(BMessage* message) {
       EventFlagsFromHaiku(modifiers(), static_cast<int32>(buttons)), EF_NONE));
 }
 
+void HaikuContentView::DispatchInputMethod(BMessage* message) {
+  if (!ui_task_runner_ || ime_sink_.is_null())
+    return;
+
+  HaikuImeEvent event;
+  if (message->FindInt32("be:opcode", &event.opcode) != B_OK)
+    return;
+  bool direct = false;
+  if (message->FindBool("koreanime:direct", &direct) == B_OK && direct)
+    return;  // plain key presses for views that take no input method events
+  const char* text = nullptr;
+  if (message->FindString("be:string", &text) == B_OK && text != nullptr)
+    event.text = base::UTF8ToUTF16(text);
+  bool value = false;
+  if (message->FindBool("be:confirmed", &value) == B_OK)
+    event.confirmed = value;
+  if (message->FindBool("koreanime:key", &value) == B_OK) {
+    event.marks_keys = true;
+    event.from_key = value;
+  }
+  message->FindMessenger("be:reply_to", &event.reply_to);
+
+  ui_task_runner_->PostTask(FROM_HERE, base::BindOnce(ime_sink_, event));
+}
+
 void HaikuContentView::MessageReceived(BMessage* message) {
   if (message->what == B_MOUSE_WHEEL_CHANGED) {
     DispatchWheel(message);
+    return;
+  }
+  if (message->what == B_INPUT_METHOD_EVENT) {
+    DispatchInputMethod(message);
     return;
   }
   BView::MessageReceived(message);

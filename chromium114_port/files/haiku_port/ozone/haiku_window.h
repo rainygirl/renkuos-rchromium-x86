@@ -12,6 +12,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/task/single_thread_task_runner.h"
+#include "haiku_ime_event.h"
 #include "ui/events/event_constants.h"
 // EventFlags lives in event_constants.h but EventType has its own header.
 #include "ui/events/types/event_type.h"
@@ -40,6 +41,7 @@ class HaikuContentView : public BView {
   using EventSink = base::RepeatingCallback<void(std::unique_ptr<Event>)>;
   using BoundsSink = base::RepeatingCallback<void(const gfx::Rect&)>;
   using CloseSink = base::RepeatingClosure;
+  using ImeSink = base::RepeatingCallback<void(const HaikuImeEvent&)>;
 
   HaikuContentView();
   ~HaikuContentView() override;
@@ -51,6 +53,10 @@ class HaikuContentView : public BView {
                 EventSink event_sink,
                 BoundsSink bounds_sink,
                 CloseSink close_sink);
+
+  // Input method events (B_INPUT_METHOD_EVENT) go here, on the UI thread.
+  // Same rules as SetSinks: set once, before the window is shown.
+  void SetImeSink(ImeSink ime_sink) { ime_sink_ = std::move(ime_sink); }
 
   // `damage` is the region viz actually repainted, in canvas pixels. Copying
   // and invalidating only that is worth doing here: without a GPU every frame
@@ -93,6 +99,7 @@ class HaikuContentView : public BView {
   void DispatchMouse(EventType type, BPoint where, int32 changed_button);
   void DispatchKey(EventType type, const char* bytes, int32 num_bytes);
   void DispatchWheel(BMessage* message);
+  void DispatchInputMethod(BMessage* message);
 
   BLocker frame_lock_;
   std::unique_ptr<BBitmap> frame_;
@@ -103,6 +110,7 @@ class HaikuContentView : public BView {
   EventSink event_sink_;
   BoundsSink bounds_sink_;
   CloseSink close_sink_;
+  ImeSink ime_sink_;
 };
 
 class HaikuWindow : public StubWindow {
@@ -158,6 +166,7 @@ class HaikuWindow : public StubWindow {
   void OnEventFromLooper(std::unique_ptr<Event> event);
   void OnBoundsFromLooper(const gfx::Rect& bounds);
   void OnCloseFromLooper();
+  void OnImeFromLooper(const HaikuImeEvent& event);
 
   HaikuWindowManager* manager_;
   gfx::AcceleratedWidget widget_ = gfx::kNullAcceleratedWidget;

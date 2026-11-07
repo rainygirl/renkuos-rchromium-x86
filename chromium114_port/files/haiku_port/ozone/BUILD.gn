@@ -17,6 +17,7 @@ source_set("beapi_views") {
     "haiku_beapi_looper.h",
     "haiku_beapi_views.cc",
     "haiku_browser_chrome.h",
+    "haiku_ime_event.h",
   ]
 
   configs -= [ "//build/config/compiler:no_rtti" ]
@@ -54,6 +55,9 @@ source_set("ozone") {
     "haiku_cursor_factory.h",
     "haiku_event_translation.cc",
     "haiku_event_translation.h",
+    "haiku_ime_event.h",
+    "haiku_input_method.cc",
+    "haiku_input_method.h",
     "haiku_screen.cc",
     "haiku_screen.h",
     "haiku_surface_factory.cc",

@@ -20,6 +20,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "haiku_event_translation.h"
+#include "haiku_input_method.h"
 #include "haiku_window_manager.h"
 #include "ui/events/base_event_utils.h"
 #include "ui/events/event.h"
@@ -64,6 +65,8 @@ HaikuWindow::HaikuWindow(PlatformWindowDelegate* delegate,
                           weak_factory_.GetWeakPtr()),
       base::BindRepeating(&HaikuWindow::OnCloseFromLooper,
                           weak_factory_.GetWeakPtr()));
+  view_->SetImeSink(base::BindRepeating(&HaikuWindow::OnImeFromLooper,
+                                        weak_factory_.GetWeakPtr()));
 
   fprintf(stderr, "[RCH] HaikuWindow ctor bounds=%dx%d\n",
           bounds_.width(), bounds_.height());
@@ -90,6 +93,11 @@ void HaikuWindow::OnEventFromLooper(std::unique_ptr<Event> event) {
         gfx::ToFlooredPoint(event->AsLocatedEvent()->root_location_f()));
   }
   delegate()->DispatchEvent(event.get());
+}
+
+void HaikuWindow::OnImeFromLooper(const HaikuImeEvent& event) {
+  if (InputMethodHaiku* ime = InputMethodHaiku::ForWidget(widget_))
+    ime->OnHaikuImeEvent(event);
 }
 
 void HaikuWindow::OnBoundsFromLooper(const gfx::Rect& bounds) {
