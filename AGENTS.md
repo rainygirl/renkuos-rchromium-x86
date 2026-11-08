@@ -2123,3 +2123,25 @@ other RenkuOS input method compose inside pages.
   method's `be:reply_to`.
 - Events marked `koreanime:direct` are skipped: they carry key presses for
   views that are not input method aware (see renkuos-koreanime AGENTS.md).
+
+## 2026-11-08: downloads, and a star that shows the page is bookmarked
+
+content_shell cancelled every download: `ChooseDownloadPath()` opens a save
+dialog only on Windows and passes an empty path everywhere else.
+`chromium114_port/port/port-shell-downloads.py` saves to `~/Downloads`
+(through `.crdownload`, `name (1).ext` when taken) and gives the delegate a
+`HaikuDownloadUI` (`files/content/shell/browser/haiku_download_ui.*`) that
+pushes progress to a native Downloads window in `haiku_beapi_views.cc`
+(`HaikuDownloadsUpdate`/`HaikuDownloadsSetCancelCallback` in
+`haiku_browser_chrome.h`). On completion the file gets `update_mime_info()`
+and its folder opens in Tracker. Same design as the arm64 port's, whose
+AGENTS.md has the detail; only the 114 `DownloadTargetCallback` (eight
+positional arguments instead of a `DownloadTargetInfo`) differs.
+
+The star is drawn pressed in, gold, while the current URL is bookmarked, and
+pressing it then removes the bookmark (`BookmarkStore::Contains/Remove`,
+`ChromeButton::SetLatched`).
+
+Built in the M4 `rch114` container (`out/haiku-x86`, 15 edges, links); not
+yet run on the VAIO P. The arm64 build of the same design was verified on a
+VM.

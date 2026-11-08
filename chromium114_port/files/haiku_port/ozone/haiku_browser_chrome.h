@@ -1,8 +1,11 @@
 #ifndef RCHROMIUM_HAIKU_BROWSER_CHROME_H_
 #define RCHROMIUM_HAIKU_BROWSER_CHROME_H_
 
+#include <stdint.h>
+
 #include <string>
 
+#include "base/functional/callback.h"
 #include "ui/gfx/native_widget_types.h"
 
 namespace ui {
@@ -98,6 +101,22 @@ bool SetFileIcon(const std::string& path,
                  const uint32_t* argb,
                  int width,
                  int height);
+
+// The native Downloads window: a row per download with its progress,
+// Cancel, "Show in folder" and "Clear finished". It opens on the first update
+// for a new download; when one completes the file gets a MIME type and its
+// folder opens in Tracker. Update from the UI thread; `total` is -1 when the
+// size is not known. The cancel callback runs on the thread that set it.
+enum class HaikuDownloadState { kInProgress, kComplete, kCancelled, kFailed };
+void HaikuDownloadsUpdate(uint32_t id,
+                          const std::string& file_name,
+                          const std::string& full_path,
+                          int64_t received,
+                          int64_t total,
+                          int64_t bytes_per_second,
+                          HaikuDownloadState state);
+void HaikuDownloadsSetCancelCallback(
+    base::RepeatingCallback<void(uint32_t)> callback);
 
 }  // namespace ui
 

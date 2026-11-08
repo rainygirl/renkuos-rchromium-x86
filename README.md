@@ -92,11 +92,15 @@ From a shell:
 - **Bookmarks**: the star (★) bookmarks the current page; the list (≡) opens
   the Bookmarks window, grouped by date (Today, Yesterday, then dates) with a
   search field that filters by title and URL as you type. Double-click an
-  entry to open it. Bookmarking a page again moves it to Today instead of
-  duplicating it. They are stored in the plain text file
+  entry to open it. On a bookmarked page the star stays pressed in (gold);
+  pressing it again removes the bookmark. They are stored in the plain text file
   `~/config/settings/RChromium/bookmarks`, one `<unix seconds> <url> <title>`
   line per bookmark (tab-separated), so they survive reinstalls and can be
   edited or backed up by hand.
+- **Downloads** are saved to `~/Downloads` (an existing name gets ` (1)`).
+  A Downloads window shows each one's progress, speed and time left, with
+  Cancel, Show in folder and Clear finished; when a download completes, the
+  folder opens in Tracker.
 - **Windows**: drag the resize corner and the page re-lays out to the new
   size. A link that opens a new window gets its own R Chromium window, offset
   from the current one. Closing a window closes that page; closing the last
